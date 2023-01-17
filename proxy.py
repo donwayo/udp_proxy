@@ -29,9 +29,6 @@ class UDP_Proxy():
         self.local_ip = l_ip
         self.local_port = l_port if l_port is not None else r_port
 
-        self.threads = []
-        self.fifo = queue.Queue()
-
         # Set up sockets
         self.socket_remote6 = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
         self.socket_remote6.settimeout(1)
@@ -52,6 +49,9 @@ class UDP_Proxy():
         self.local_port = self.socket_local4.getsockname()[1]
 
         # Set up threads
+        self.threads = []
+        self.fifo = queue.Queue()
+
         self.threads = [
             threading.Thread(daemon=True, target=self.forwarder, args=('s2c', self.socket_remote6, self.socket_local4)),
             threading.Thread(daemon=True, target=self.forwarder, args=('c2s', self.socket_local4, self.socket_remote6))
