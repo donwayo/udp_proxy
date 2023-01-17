@@ -19,7 +19,7 @@ class UDP_Proxy():
     rx_count = 0
     tx_count = 0
 
-    run = None
+    running = None
 
     count_lock = threading.Lock()
 
@@ -86,6 +86,8 @@ class UDP_Proxy():
 
     def forwarder(self, name, rx, tx):
         port = None
+        s2c = name == 's2c'
+
         while self.running.is_set():
 
             try:
@@ -94,7 +96,7 @@ class UDP_Proxy():
                 continue
 
             if data:
-                if name == 's2c':
+                if s2c:
                     if port is None:
                         port = self.fifo.get()
                     tx.sendto(data, (self.local_ip, port))
@@ -110,4 +112,3 @@ class UDP_Proxy():
 
                     with self.count_lock:
                         self.tx_count += 1
-
