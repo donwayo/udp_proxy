@@ -4,24 +4,10 @@ import threading
 
 class UDP_Proxy():
 
-    remote_ip = None
-    remote_port = None
-
-    local_ip = None
-    local_port = None
-
-    socket_local4 = None
-    socket_remote6 = None
-
-    threads = None
-    fifo = None
-
     rx_count = 0
     tx_count = 0
 
     running = None
-
-    count_lock = threading.Lock()
 
     def __init__(self, r_ip, r_port, l_ip='127.0.0.1', l_port=None):
         self.remote_ip = r_ip
@@ -49,6 +35,8 @@ class UDP_Proxy():
         self.local_port = self.socket_local4.getsockname()[1]
 
         # Set up threads
+        self.count_lock = threading.Lock()
+
         self.threads = []
         self.fifo = queue.Queue()
 
@@ -92,23 +80,65 @@ class UDP_Proxy():
 
             try:
                 data, addr = rx.recvfrom(4096)
+
             except socket.timeout:
+                continue
+            except ConnectionResetError:
+                # Need to fix
                 continue
 
             if data:
                 if s2c:
-                    if port is None:
-                        port = self.fifo.get()
+                    # Get the port from the other thread
+                    if port is None or not self.fifo.empty():
+                        # Block until we get a port to send data to.
+                        port = self.fifo.get(block=True) 
                     tx.sendto(data, (self.local_ip, port))
 
                     with self.count_lock:
                         self.rx_count += 1
 
                 else:
-                    if port is None:
+                    # Send the port of the client to the other thread on 
+                    # first connect or when it changes (new connection).
+                    if port is None or port != addr[1]:
                         port = addr[1]
                         self.fifo.put_nowait(port)
                     tx.sendto(data, (self.remote_ip, self.remote_port))
 
                     with self.count_lock:
                         self.tx_count += 1
+            
+
+if __name__ == "__main__":
+    import argparse
+    import time
+
+    parser = argparse.ArgumentParser(
+                    prog = 'udpproxy',
+                    description = 'UDP Proxy by wayo.',)
+    parser.add_argument('ipv6', help='Remote IPv6 server to forward the connection to.')
+    parser.add_argument('port', help='Port on the remote IPv6 server.', type=int)
+    parser.add_argument('--local-port', help='Local port to listen on. Defaults to the same port as remote IPv6 server.', default=-1, required=False, type=int)
+    parser.add_argument('--local-address', help='Local IPv4 address to listen on. Defaults to 127.0.0.1.', default="127.0.0.1", required=False)
+
+    args = parser.parse_args()
+
+    r_ip6 = args.ipv6
+    r_port = args.port
+    l_ip = args.local_address
+    l_port = None
+
+    if args.local_port < 0 or args.local_port > 65535:
+        l_port = args.port
+    else:
+        l_port = args.local_port
+
+    proxy = UDP_Proxy(r_ip6, r_port, l_ip, l_port)
+
+    proxy.run()
+    print(f"Waiting on {l_ip}:{l_port} for connections... ")
+
+    while True:
+        time.sleep(0.3)
+        print(f"Packets sent: {proxy.packets_out} / Packets recv: {proxy.packets_in}", end="\r")
